@@ -8,8 +8,8 @@ import math
 from torch import sigmoid, tanh, relu
 from torch.utils.tensorboard import SummaryWriter
 from mish import Mish
-from ranger import Ranger
 import glob
+import pandas as pd
 
 # Reproducibility
 torch.manual_seed(0)
@@ -80,21 +80,21 @@ def get_lr(optimizer):
         return param_group['lr']
 
 
-def train(model, dataset, val_X, val_y, batch_size=512, epochs=500, epoch_show=1, weight_decay=1e-5, momentum=0.9):
+def train(model, dataset, val_X, val_y, batch_size=128, epochs=3000, epoch_show=10, weight_decay=1e-5, momentum=0.9):
     train_loader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    # optimizer = optim.Adam(model.parameters(), weight_decay=weight_decay)
-    optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=momentum, weight_decay=weight_decay)
-    min_lr = 1e-4
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-                                                     mode='min',
-                                                     factor=0.1,
-                                                     patience=50,
-                                                     threshold=0,
-                                                     min_lr=min_lr,
-                                                     verbose=True)
+    optimizer = optim.Adam(model.parameters(), weight_decay=weight_decay)
+    # optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=momentum, weight_decay=weight_decay)
+    # min_lr = 1e-4
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
+    #                                                  mode='min',
+    #                                                  factor=0.1,
+    #                                                  patience=50,
+    #                                                  threshold=0,
+    #                                                  min_lr=min_lr,
+    #                                                  verbose=True)
     loss_fn = nn.MSELoss(reduction='mean')
 
-    writer = SummaryWriter('runs/batchSize/linear_hidden={}_neurons={}_{}_batch={:04d}_bn={}_p={:.1f}_mom={}_l2={}'.format(
+    writer = SummaryWriter('runs/linear_hidden={}_neurons={}_{}_batch={:04d}_bn={}_p={:.1f}_mom={}_l2={}'.format(
         len(model.features)-1, model.features[-1], model.activation_fn_name, batch_size, model.bn, model.p, momentum,
         weight_decay
     ))
@@ -117,9 +117,18 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=500, epoch_show=1
             with torch.no_grad():
                 model.eval()
                 pred = model(val_X)
+
+                # x_np = pred.cpu().numpy()
+                # x_df = pd.DataFrame(x_np)
+                # x_df.to_csv('pred.csv')
+                #
+                # x_np = val_y.cpu().numpy()
+                # x_df = pd.DataFrame(x_np)
+                # x_df.to_csv('val.csv')
+
                 loss_val = loss_fn(val_y, pred.squeeze())
                 mape = mean_absolute_percentage_error(val_y, pred.squeeze())
-                scheduler.step(best_val_mape)
+                # scheduler.step(best_val_mape)
                 print('\nEpoch {:03d}: loss_train={:.6f}, loss_val={:.6f}, val_mape={:.4f}, '
                       'best_val_mape={:.4f}'.format(epoch, loss_epoch/(i+1), loss_val, mape, best_val_mape), end='  ')
                 if mape < best_val_mape:
@@ -136,7 +145,7 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=500, epoch_show=1
     return writer
 
 
-def test(model, models_dir, test_X, test_y, real_test_X, real_test_y):
+def test(model, models_dir, test_X, test_y):
     model.eval()
     models_name = glob.glob(models_dir + 'running_best_model.pt')
     models_name.sort()
@@ -145,24 +154,15 @@ def test(model, models_dir, test_X, test_y, real_test_X, real_test_y):
     loss = nn.MSELoss()(pred.squeeze(), test_y)
     mape = mean_absolute_percentage_error(test_y, pred.squeeze())
     print('\nloss_test: {:.6f}, mape_test:{:.4f}'.format(loss, mape))
-    # writer.add_scalar('mape/test', mape)
+    writer.add_scalar('mape/test', mape)
 
-    pred = model(real_test_X)
-    print(pred.squeeze())
-    print(real_test_y)
-    print(torch.abs(real_test_y - pred.squeeze()) / real_test_y * 100)
-    loss = nn.MSELoss()(pred.squeeze(), real_test_y)
-    mape = mean_absolute_percentage_error(real_test_y, pred.squeeze())
-    print('\nloss_real_test: {:.6f}, mape_real_test:{:.4f}'.format(loss, mape))
-
-    import json
-    output = torch.abs(real_test_y - pred.squeeze()) / real_test_y * 100
-    output = output.detach().tolist()
-    output = [float('%.1f' % (x)) for x in output]
-    with open("prediction_on_real_data.txt", "a") as outfile:
-        json.dump(output, outfile)
-        outfile.write('  ' + str(np.mean(output)))
-        outfile.write('\n')
+    # output = torch.abs(real_test_y - pred.squeeze()) / real_test_y * 100
+    # output = output.detach().tolist()
+    # output = [float('%.1f' % (x)) for x in output]
+    # with open("prediction_on_real_data.txt", "a") as outfile:
+    #     json.dump(output, outfile)
+    #     outfile.write('  ' + str(np.mean(output)))
+    #     outfile.write('\n')
 
 
 def load_data(file, device):
@@ -173,11 +173,9 @@ def load_data(file, device):
     val_y = data['val_y']
     test_X = data['test_X']
     test_y = data['test_y']
-    real_test_X = data['real_test_X']
-    real_test_y = data['real_test_y']
     mean = data['mean']
     std = data['std']
-
+    print(mean, std)
     # from sklearn.preprocessing import PowerTransformer
     # pt = PowerTransformer(method='box-cox', standardize=True)
     # train_y = pt.fit_transform(train_y.reshape(-1,1)).squeeze()
@@ -185,37 +183,36 @@ def load_data(file, device):
     # test_y = pt.transform(test_y.reshape(-1,1)).squeeze()
     # real_test_y = pt.transform(real_test_y.reshape(-1,1)).squeeze()
 
-    train_X, val_X, test_X, real_test_X = map(lambda x: (x - mean) / std,
-                                              [train_X, val_X, test_X, real_test_X])
-
-    train_X, val_X, test_X, real_test_X = map(lambda x: torch.tensor(x, dtype=torch.float32, device=device),
-                                              [train_X, val_X, test_X, real_test_X])
-    train_y, val_y, test_y, real_test_y = map(lambda x: torch.tensor(x, dtype=torch.float32, device=device),
-                                              [train_y, val_y, test_y, real_test_y])
+    train_X, val_X, test_X = map(lambda x: (x - mean) / std,
+                                              [train_X, val_X, test_X])
+    train_X, val_X, test_X = map(lambda x: torch.tensor(x, dtype=torch.float32, device=device),
+                                              [train_X, val_X, test_X])
+    train_y, val_y, test_y = map(lambda x: torch.tensor(x, dtype=torch.float32, device=device),
+                                              [train_y, val_y, test_y])
 
     dataset = BLEVEDataset(train_X, train_y)
 
-    return dataset, val_X, val_y, test_X, test_y, real_test_X, real_test_y
+    return dataset, val_X, val_y, test_X, test_y
 
 
 if __name__ == '__main__':
     for i in range(1):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        dataset, val_X, val_y, test_X, test_y, real_test_X, real_test_y = load_data(
-            file='BLEVE_Butane_Propane.npz', device=device)
+        dataset, val_X, val_y, test_X, test_y = load_data(
+            file='data/BLEVE_Obstacle_Butane_Propane.npz', device=device)
         print(len(val_X))
 
-        activation_list = ['mish']
+        activation_list = ['mish', 'relu']
         bn_list = [0]
-        p_list = [0]
-        batchSize_list = [512]
+        p_list = [0, 0.1, 0.2]
+        batchSize_list = [64, 128, 256, 512]
         # feature_list = [[val_X.shape[1], 64], [val_X.shape[1], 128], [val_X.shape[1], 256], [val_X.shape[1], 512],
         #                 [val_X.shape[1], 64, 64], [val_X.shape[1], 128, 128], [val_X.shape[1], 256, 256], [val_X.shape[1], 512, 512]
         #                 [val_X.shape[1], 64, 64, 64], [val_X.shape[1], 128, 128, 128], [val_X.shape[1], 256, 256, 256], [val_X.shape[1], 512, 512, 512],
         #                 [val_X.shape[1], 64, 64, 64, 64], [val_X.shape[1], 128, 128, 128, 128], [val_X.shape[1], 256, 256, 256, 256], [val_X.shape[1], 512, 512, 512, 512]]
-        feature_list =[[val_X.shape[1], 256, 256, 256]]
+        feature_list =[[val_X.shape[1], 128, 128], [val_X.shape[1], 128, 128, 128], [val_X.shape[1], 256, 256], [val_X.shape[1], 256, 256, 256]]
         momentum_list = [0.9]
-        weight_decay_list = [1e-6]
+        weight_decay_list = [0, 1e-5, 1e-4]
 
         for activation_fn in activation_list:
             for bn in bn_list:
@@ -231,4 +228,4 @@ if __name__ == '__main__':
                                     model.to(device)
                                     writer = train(model, dataset, val_X, val_y, batch_size=batch_size,
                                                    momentum=momentum, weight_decay=weight_decay)
-                                    test(model, 'models/', test_X, test_y, real_test_X, real_test_y)
+                                    test(model, 'models/', test_X, test_y)
