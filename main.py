@@ -56,7 +56,7 @@ class MLPNet(nn.Module):
             if p > 0:
                 self.net.add_module('dp%d' % layer, nn.Dropout(p))
         self.net.add_module('out', nn.Linear(features[-1], 1))
-        self.net.add_module('out1', nn.Softplus(beta=5))
+        # self.net.add_module('out1', nn.Softplus(beta=5))
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -80,10 +80,10 @@ def get_lr(optimizer):
         return param_group['lr']
 
 
-def train(model, dataset, val_X, val_y, batch_size=128, epochs=3000, epoch_show=10, weight_decay=1e-5, momentum=0.9):
+def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=10, weight_decay=1e-5, momentum=0.9):
     train_loader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     optimizer = optim.Adam(model.parameters(), weight_decay=weight_decay)
-    # optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=momentum, weight_decay=weight_decay)
+    # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=momentum, weight_decay=weight_decay)
     # min_lr = 1e-4
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
     #                                                  mode='min',
@@ -175,7 +175,7 @@ def load_data(file, device):
     test_y = data['test_y']
     mean = data['mean']
     std = data['std']
-    print(mean, std)
+    
     # from sklearn.preprocessing import PowerTransformer
     # pt = PowerTransformer(method='box-cox', standardize=True)
     # train_y = pt.fit_transform(train_y.reshape(-1,1)).squeeze()
@@ -202,17 +202,18 @@ if __name__ == '__main__':
             file='data/BLEVE_Obstacle_Butane_Propane.npz', device=device)
         print(len(val_X))
 
-        activation_list = ['mish', 'relu']
+        activation_list = ['mish']
         bn_list = [0]
-        p_list = [0, 0.1, 0.2]
-        batchSize_list = [64, 128, 256, 512]
+        p_list = [0]
+        batchSize_list = [128]
         # feature_list = [[val_X.shape[1], 64], [val_X.shape[1], 128], [val_X.shape[1], 256], [val_X.shape[1], 512],
         #                 [val_X.shape[1], 64, 64], [val_X.shape[1], 128, 128], [val_X.shape[1], 256, 256], [val_X.shape[1], 512, 512]
         #                 [val_X.shape[1], 64, 64, 64], [val_X.shape[1], 128, 128, 128], [val_X.shape[1], 256, 256, 256], [val_X.shape[1], 512, 512, 512],
         #                 [val_X.shape[1], 64, 64, 64, 64], [val_X.shape[1], 128, 128, 128, 128], [val_X.shape[1], 256, 256, 256, 256], [val_X.shape[1], 512, 512, 512, 512]]
-        feature_list =[[val_X.shape[1], 128, 128], [val_X.shape[1], 128, 128, 128], [val_X.shape[1], 256, 256], [val_X.shape[1], 256, 256, 256]]
+        feature_list =[[val_X.shape[1], 512, 512, 512, 512, 512]]
         momentum_list = [0.9]
-        weight_decay_list = [0, 1e-5, 1e-4]
+        weight_decay_list = [1e-4]
+        epochs = 5000
 
         for activation_fn in activation_list:
             for bn in bn_list:
@@ -226,6 +227,6 @@ if __name__ == '__main__':
                                     ))
                                     model = MLPNet(features=features, activation_fn=activation_fn, bn=bn, p=p)
                                     model.to(device)
-                                    writer = train(model, dataset, val_X, val_y, batch_size=batch_size,
+                                    writer = train(model, dataset, val_X, val_y, epochs=epochs, batch_size=batch_size,
                                                    momentum=momentum, weight_decay=weight_decay)
                                     test(model, 'models/', test_X, test_y)
