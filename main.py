@@ -56,7 +56,7 @@ class MLPNet(nn.Module):
             if p > 0:
                 self.net.add_module('dp%d' % layer, nn.Dropout(p))
         self.net.add_module('out', nn.Linear(features[-1], 1))
-        self.net.add_module('out1', nn.Softplus(beta=5))
+        # self.net.add_module('out1', nn.Softplus(beta=5))
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -95,9 +95,11 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=
     #                                                  threshold=0,
     #                                                  min_lr=min_lr,
     #                                                  verbose=True)
-    loss_fn = nn.MSELoss(reduction='mean')
 
-    writer = SummaryWriter('runs/temp/linear_hidden={}_neurons={}_{}_batch={:04d}_bn={}_p={:.1f}_mom={}_l2={}'.format(
+    loss_mape = mean_absolute_percentage_error
+    loss_mse = nn.MSELoss(reduction='mean')
+
+    writer = SummaryWriter('runs/mape_layers/linear_hidden={}_neurons={}_{}_batch={:04d}_bn={}_p={:.1f}_mom={}_l2={}'.format(
         len(model.features)-1, model.features[-1], model.activation_fn_name, batch_size, model.bn, model.p, momentum,
         weight_decay
     ))
@@ -111,7 +113,7 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=
         for i, data in enumerate(train_loader, 0):
             x, y = data
             out = model(x)
-            loss_iter = loss_fn(y, out.squeeze())
+            loss_iter = loss_mape(y, out.squeeze())
             optimizer.zero_grad()
             loss_iter.backward()
             optimizer.step()
@@ -120,7 +122,7 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=
             with torch.no_grad():
                 model.eval()
                 pred = model(train_X)
-                loss_train = loss_fn(train_y, pred.squeeze())
+                loss_train = loss_mse(train_y, pred.squeeze())
                 mape_train = mean_absolute_percentage_error(train_y, pred.squeeze())
 
                 pred = model(val_X)
@@ -133,11 +135,12 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=
                 # x_df = pd.DataFrame(x_np)
                 # x_df.to_csv('val.csv')
 
-                loss_val = loss_fn(val_y, pred.squeeze())
+                loss_val = loss_mse(val_y, pred.squeeze())
                 mape_val = mean_absolute_percentage_error(val_y, pred.squeeze())
                 # scheduler.step(best_val_mape)
                 print('\nEpoch {:03d}: loss_train={:.6f}, loss_val={:.6f}, train_mape={:.4f}, val_mape={:.4f}, '
-                      'best_val_mape={:.4f}'.format(epoch, loss_train, loss_val, mape_train, mape_val, best_val_mape), end='  ')
+                      'best_val_mape={:.4f}'.format(epoch, loss_train, loss_val, mape_train, mape_val, best_val_mape),
+                      end='  ')
                 if mape_val < best_val_mape:
                     model_name = 'running_best_model.pt'
                     print('Val_mape improved from {:.4f} to {:.4f}, saving model to {}'.format(
@@ -218,7 +221,10 @@ if __name__ == '__main__':
         #                 [val_X.shape[1], 64, 64], [val_X.shape[1], 128, 128], [val_X.shape[1], 256, 256], [val_X.shape[1], 512, 512]
         #                 [val_X.shape[1], 64, 64, 64], [val_X.shape[1], 128, 128, 128], [val_X.shape[1], 256, 256, 256], [val_X.shape[1], 512, 512, 512],
         #                 [val_X.shape[1], 64, 64, 64, 64], [val_X.shape[1], 128, 128, 128, 128], [val_X.shape[1], 256, 256, 256, 256], [val_X.shape[1], 512, 512, 512, 512]]
-        feature_list =[[val_X.shape[1], 256, 256, 256, 256]]
+        feature_list = [[val_X.shape[1], 128, 128], [val_X.shape[1], 256, 256],
+                        [val_X.shape[1], 128, 128, 128], [val_X.shape[1], 256, 256, 256],
+                        [val_X.shape[1], 128, 128, 128, 128], [val_X.shape[1], 256, 256, 256, 256], [val_X.shape[1], 512, 512, 512, 512],
+                        [val_X.shape[1], 128, 128, 128, 128, 128], [val_X.shape[1], 256, 256, 256, 256, 256]]
         momentum_list = [0.9]
         weight_decay_list = [1e-5]
         epochs = 5000

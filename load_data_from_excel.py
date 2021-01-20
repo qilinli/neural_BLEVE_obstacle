@@ -59,7 +59,7 @@ def load_data(file):
 
     target = data["target"]
     data.drop("target", axis=1, inplace=True)
-    print(data.head(28))
+    print(target.head(28))
     print(data.columns)
 
     # dataset split, 70% training 15 validation 15 testing
