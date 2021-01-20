@@ -90,6 +90,14 @@ def scatter_plot(df, xmin, xmax):
 
 
 def error_analysis(df, feature, target, error):
+    """
+    a function to analyze the output error based on feature value.
+    :param df: pandas data frame, contain feature, ground-truth, and prediction
+    :param feature: string, the name of the column we are analyzing in df
+    :param target: list, the value interval of the feature
+    :param error: list, the value interval of error
+    :return: percentage % of data points within each interval of the target feature that falls into each error interval
+    """
     sumn = 0
     for i in range(len(target) - 1):
         df_subset = df.loc[df[feature] > target[i]]
@@ -111,24 +119,29 @@ def error_analysis(df, feature, target, error):
 
 # Name of features
 columns = ['Tank failure Pressure (bar)',
-           'Liquid ratio',
-           'Tank width (m)',
+           'Liquid ratio (%)', 'Tank width (m)',
            'Tank length (m)',
            'Tank height (m)',
            'Height of BLEVE (m)',
-           'Vapour temerature (K)',
-           'Liquid temerature (K)',
+           'Tank height with gas (m)',
+           ' Vapour temerature (K)',
+           ' liquid temerature (K)',
+           'Obstacle distance to BLEVE',
+           'Width of Obstacle ',
+           'Height of Obstacle ',
+           'Thickness of Obstacle ',
+           'Angle of Obstacle ',
            'Status',
-           'Gas height  (m)',
-           'Distance to BLEVE']
+           'obstacle ID',
+           'Position ID']
 
 # Check the performance
-data = np.load('BLEVE_Butane_Propane.npz')
+data = np.load('data/BLEVE_Obstacle_Butane_Propane.npz')
 mean = data['mean']
 std = data['std']
 
-model = MLPNet(features=[mean.shape[0], 256, 256, 256], activation_fn='mish')
-models_name = glob.glob('models/final_model.pt')
+model = MLPNet(features=[mean.shape[0], 512, 512, 512, 512, 512], activation_fn='mish')
+models_name = glob.glob('models/BLEVE_open_L5_N512.pt')
 models_name.sort()
 model.load_state_dict(torch.load(models_name[-1]), strict=False)
 model.eval()
@@ -177,12 +190,12 @@ df_test = df_test.assign(relative_error=np.abs(pred_test.detach().numpy()
                                                - data['test_y'])/data['test_y'] * 100)
 # df_test.to_excel("output.xlsx", sheet_name='simulated_data')
 
-# scatter_plot(df_test, 100, 500)
+# scatter_plot(df_test, 0, 500)
 
-# Target pressure error analysis
-# target = [0, 0.05, 0.1, 0.2, 0.5, 5]
-# error = [0, 5, 10, 20, 30]
-# feature = 'output_simulated'
+#Target pressure error analysis
+target = [x for x in range(28)]
+error = [0, 5, 10, 20, 30]
+feature = 'Position ID'
 #
 # # BLEVE distance error analysis
 # target = [0, 10, 20, 30, 40, 50]
@@ -199,48 +212,9 @@ df_test = df_test.assign(relative_error=np.abs(pred_test.detach().numpy()
 # error = [0, 5, 10, 20, 30]
 # feature = 'Gas height  (m)'
 #
-# error_analysis(df_test, feature, target, error)
-
-# LOAD real data
-real_test_X = data['real_test_X']
-real_test_y = data['real_test_y']
-
-# Pre-processing for prediction
-real_test_X = torch.tensor((real_test_X - mean) / std, dtype=torch.float32)
-real_test_y = torch.tensor(real_test_y, dtype=torch.float32)
-real_pred_test = model(real_test_X)
-real_pred_test = real_pred_test.squeeze()
-print("MAPE_real_test: {}".format(mean_absolute_percentage_error(real_test_y, real_pred_test)))
-print("R2_real_test: {}".format(r2_score(data['real_test_y'], real_pred_test.detach().numpy())))
+error_analysis(df_test, feature, target, error)
 
 
-df_test_real = pd.DataFrame(data['real_test_X'], columns=columns)
-df_test_real = df_test_real.assign(output_simulated=data['real_test_y'])
-real_pred_test = real_pred_test.detach().numpy()
-df_test_real = df_test_real.assign(output_predicted=real_pred_test)
-df_test_real = df_test_real.assign(relative_error=np.abs(real_pred_test -
-                                                         data['real_test_y'])/data['real_test_y'] * 100)
-df = pd.read_excel('data_simulated_real_Butane_Propane_T4.xlsx', 'real_noVal')
-df_id_fluid = df.iloc[:, 0:2]
-df_test_real.loc[df_test_real['Status'] == 0, 'Status'] = 'Saturated'
-df_test_real.loc[df_test_real['Status'] == 1, 'Status'] = 'Superheated'
-df_test_real = pd.concat([df_test_real, df_id_fluid], axis=1)
 
-df = pd.read_excel('data_simulated_real_Butane_Propane_T4.xlsx', 'Target_FLACS_ANN')
-print('FLACS vs ANN: ', np.mean(np.abs(df['flacs'] - df['ann'])/df['flacs'] * 100))
-print('FLACS vs Exp: ', np.mean(np.abs(df['flacs'] - df['target'])/df['target'] * 100))
-print('ANN vs Exp: ', np.mean(np.abs(df['ann'] - df['target'])/df['target'] * 100))
-df_test_real = pd.concat([df_test_real, df['flacs']], axis=1)
-# df_test_real.to_excel("output_real_noVal.xlsx", sheet_name='real_no_Val')
-
-scatter_plot_real(df_test_real, 0, 12)
-
-# BLEVE distance error analysis
-# target = [9, 20, 40, 100]
-# error = [0, 10, 20, 30, 50]
-# feature = 'Distance to BLEVE'
-
-# error_analysis(df_test_real, feature, target, error)
-# print(df_test_real['relative_error'])
 
 

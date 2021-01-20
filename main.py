@@ -56,11 +56,11 @@ class MLPNet(nn.Module):
             if p > 0:
                 self.net.add_module('dp%d' % layer, nn.Dropout(p))
         self.net.add_module('out', nn.Linear(features[-1], 1))
-        # self.net.add_module('out1', nn.Softplus(beta=5))
+        self.net.add_module('out1', nn.Softplus(beta=5))
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                m.weight.data = nn.init.xavier_normal_(m.weight.data)
+                m.weight.data = nn.init.xavier_uniform_(m.weight.data)
                 m.bias.data = torch.nn.init.zeros_(m.bias.data)
             if isinstance(m, nn.BatchNorm1d):
                 m.weight.data = nn.init.normal_(m.weight.data, mean=1, std=0.02)
@@ -82,6 +82,9 @@ def get_lr(optimizer):
 
 def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=10, weight_decay=1e-5, momentum=0.9):
     train_loader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    train_X_loader = DataLoader(dataset=dataset, batch_size=dataset.__len__(), shuffle=True)
+    train_X, train_y = next(iter(train_X_loader))
+
     optimizer = optim.Adam(model.parameters(), weight_decay=weight_decay)
     # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=momentum, weight_decay=weight_decay)
     # min_lr = 1e-4
@@ -94,7 +97,7 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=
     #                                                  verbose=True)
     loss_fn = nn.MSELoss(reduction='mean')
 
-    writer = SummaryWriter('runs/linear_hidden={}_neurons={}_{}_batch={:04d}_bn={}_p={:.1f}_mom={}_l2={}'.format(
+    writer = SummaryWriter('runs/temp/linear_hidden={}_neurons={}_{}_batch={:04d}_bn={}_p={:.1f}_mom={}_l2={}'.format(
         len(model.features)-1, model.features[-1], model.activation_fn_name, batch_size, model.bn, model.p, momentum,
         weight_decay
     ))
@@ -116,6 +119,10 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=
         if epoch % epoch_show == 0 or epoch == epochs - 1:
             with torch.no_grad():
                 model.eval()
+                pred = model(train_X)
+                loss_train = loss_fn(train_y, pred.squeeze())
+                mape_train = mean_absolute_percentage_error(train_y, pred.squeeze())
+
                 pred = model(val_X)
 
                 # x_np = pred.cpu().numpy()
@@ -127,19 +134,20 @@ def train(model, dataset, val_X, val_y, batch_size=512, epochs=3000, epoch_show=
                 # x_df.to_csv('val.csv')
 
                 loss_val = loss_fn(val_y, pred.squeeze())
-                mape = mean_absolute_percentage_error(val_y, pred.squeeze())
+                mape_val = mean_absolute_percentage_error(val_y, pred.squeeze())
                 # scheduler.step(best_val_mape)
-                print('\nEpoch {:03d}: loss_train={:.6f}, loss_val={:.6f}, val_mape={:.4f}, '
-                      'best_val_mape={:.4f}'.format(epoch, loss_epoch/(i+1), loss_val, mape, best_val_mape), end='  ')
-                if mape < best_val_mape:
+                print('\nEpoch {:03d}: loss_train={:.6f}, loss_val={:.6f}, train_mape={:.4f}, val_mape={:.4f}, '
+                      'best_val_mape={:.4f}'.format(epoch, loss_train, loss_val, mape_train, mape_val, best_val_mape), end='  ')
+                if mape_val < best_val_mape:
                     model_name = 'running_best_model.pt'
                     print('Val_mape improved from {:.4f} to {:.4f}, saving model to {}'.format(
-                        best_val_mape, mape, model_name), end=' ')
-                    best_val_mape = mape
+                        best_val_mape, mape_val, model_name), end=' ')
+                    best_val_mape = mape_val
                     torch.save(model.state_dict(), 'models/' + model_name)
-        writer.add_scalar("loss/train", loss_epoch/(i+1), epoch)
+        writer.add_scalar("loss/train", loss_train, epoch)
         writer.add_scalar("loss/val", loss_val, epoch)
-        writer.add_scalar("mape/val", mape, epoch)
+        writer.add_scalar("mape/train", mape_train, epoch)
+        writer.add_scalar("mape/val", mape_val, epoch)
     torch.save(model.state_dict(), 'models/final_model.pt')
     writer.add_scalar("mape/best_val", best_val_mape)
     return writer
@@ -151,7 +159,7 @@ def test(model, models_dir, test_X, test_y):
     models_name.sort()
     model.load_state_dict(torch.load(models_name[-1]), strict=False)
     pred = model(test_X)
-    loss = nn.MSELoss()(pred.squeeze(), test_y)
+    loss = nn.MSELoss(reduction='mean')(test_y, pred.squeeze())
     mape = mean_absolute_percentage_error(test_y, pred.squeeze())
     print('\nloss_test: {:.6f}, mape_test:{:.4f}'.format(loss, mape))
     writer.add_scalar('mape/test', mape)
@@ -204,15 +212,15 @@ if __name__ == '__main__':
 
         activation_list = ['mish']
         bn_list = [0]
-        p_list = [0]
-        batchSize_list = [128]
+        p_list = [0.1]
+        batchSize_list = [512]
         # feature_list = [[val_X.shape[1], 64], [val_X.shape[1], 128], [val_X.shape[1], 256], [val_X.shape[1], 512],
         #                 [val_X.shape[1], 64, 64], [val_X.shape[1], 128, 128], [val_X.shape[1], 256, 256], [val_X.shape[1], 512, 512]
         #                 [val_X.shape[1], 64, 64, 64], [val_X.shape[1], 128, 128, 128], [val_X.shape[1], 256, 256, 256], [val_X.shape[1], 512, 512, 512],
         #                 [val_X.shape[1], 64, 64, 64, 64], [val_X.shape[1], 128, 128, 128, 128], [val_X.shape[1], 256, 256, 256, 256], [val_X.shape[1], 512, 512, 512, 512]]
-        feature_list =[[val_X.shape[1], 512, 512, 512, 512, 512]]
+        feature_list =[[val_X.shape[1], 256, 256, 256, 256]]
         momentum_list = [0.9]
-        weight_decay_list = [1e-4]
+        weight_decay_list = [1e-5]
         epochs = 5000
 
         for activation_fn in activation_list:
@@ -226,6 +234,17 @@ if __name__ == '__main__':
                                         activation_fn, bn, p, batch_size, features, momentum, weight_decay
                                     ))
                                     model = MLPNet(features=features, activation_fn=activation_fn, bn=bn, p=p)
+
+                                    # models_name = glob.glob('models/BLEVE_open_L5_N512.pt')
+                                    # models_name.sort()
+                                    # pretrained_model_dict = torch.load(models_name[-1])
+                                    # pretrained_model_dict.pop('net.fc1.weight', None)
+                                    # pretrained_model_dict.pop('net.fc1.bias', None)
+                                    # pretrained_model_dict.pop('net.out.weight', None)
+                                    # pretrained_model_dict.pop('net.out.bias', None)
+                                    # print(pretrained_model_dict)
+                                    # model.load_state_dict(pretrained_model_dict, strict=False)
+
                                     model.to(device)
                                     writer = train(model, dataset, val_X, val_y, epochs=epochs, batch_size=batch_size,
                                                    momentum=momentum, weight_decay=weight_decay)

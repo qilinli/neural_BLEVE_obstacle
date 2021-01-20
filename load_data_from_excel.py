@@ -27,17 +27,29 @@ def load_data(file):
     for i in range(df_y.shape[0]):
         for j in range(len(cols)):
             x = df_x.iloc[i, :].tolist()
-            x.append(int(cols[j]))  # add label of col as feature "Position ID"
+            # add one feature to identify which side of the obstackle the sensor is on
+            sensor_position = int(cols[j])
+            if sensor_position <= 9:
+                x.append(1)
+            elif sensor_position <= 18:
+                x.append(2)
+            elif sensor_position <= 21:
+                x.append(3)
+            elif sensor_position <= 24:
+                x.append(4)
+            else:
+                x.append(5)
+            x.append(sensor_position)  # add label of col as feature "Position ID"
             x.append(df_y.iloc[i, j])  # add target values
             XY.append(x)
 
     columns = list(df_x.columns.values)
+    columns.append('obstacle side')
     columns.append('Position ID')
     columns.append('target')
 
     data = pd.DataFrame(XY, columns=columns)
     data = data[(data.target > 1e-3)]  # get rid of data points with very small target
-    print(data.shape)
     missing_values = data.isnull().values.any()
     print(data.columns[data.isnull().any()])
     if missing_values:
@@ -47,6 +59,8 @@ def load_data(file):
 
     target = data["target"]
     data.drop("target", axis=1, inplace=True)
+    print(data.head(28))
+    print(data.columns)
 
     # dataset split, 70% training 15 validation 15 testing
     n_train = int(data.shape[0] * 0.7)
